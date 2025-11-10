@@ -1,0 +1,40 @@
+name: Sync Upstream
+
+run-name: Sync the main branch with upstream llamastack/llama-stack
+
+on:
+  schedule:
+    - cron: "0 0 * * *"  # Runs nightly at midnight UTC
+  workflow_dispatch:
+
+jobs:
+  sync-upstream:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+        with:
+          persist-credentials: false
+
+      - name: Sync to temporary branch
+        uses: repo-sync/github-sync@7c8493e95237362ad417495e8512c37e78d25f19
+        with:
+          source_repo: llamastack/llama-stack
+          source_branch: main
+          destination_branch: sync-upstream-temp
+          sync_tags: "true"
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@271a8d0340265f705b14b6d32b9829c1cb33d45e
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: sync-upstream-temp
+          base: main
+          title: "Sync with upstream llamastack/llama-stack"
+          body: |
+            This PR syncs the main branch with upstream llamastack/llama-stack.
+
+            **Changes:**
+            - Syncs main branch from upstream
+            - Syncs all tags from upstream
+          delete-branch: true
