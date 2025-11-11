@@ -12,10 +12,7 @@ concurrency:
 jobs:
   sync:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
-      issues: write
+    permissions: write-all
       
     env:
       UPSTREAM_REPO: llamastack/llama-stack
