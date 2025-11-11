@@ -12,7 +12,10 @@ concurrency:
 jobs:
   sync:
     runs-on: ubuntu-latest
-    permissions: write-all
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
       
     env:
       UPSTREAM_REPO: llamastack/llama-stack
@@ -75,13 +78,16 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -eo pipefail
-          pr_number=$(gh pr list --head "${SYNC_BRANCH}" --state open --json number --jq '.[0].number' || true)
+          owner="${GITHUB_REPOSITORY%%/*}"
+          pr_number=$(gh api "repos/${GITHUB_REPOSITORY}/pulls" -X GET -f state=open -f head="${owner}:${SYNC_BRANCH}" --jq '.[0].number' || true)
           if [ -z "${pr_number}" ]; then
-            gh pr create \
-              --title "Sync upstream ${UPSTREAM_BRANCH} into ${DOWNSTREAM_BRANCH}" \
-              --body "Automated upstream sync triggered by workflow run [${GITHUB_RUN_ID}](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})." \
-              --head "${SYNC_BRANCH}" \
-              --base "${DOWNSTREAM_BRANCH}"
+            pr_number=$(gh api "repos/${GITHUB_REPOSITORY}/pulls" -X POST \
+              -f title="Sync upstream ${UPSTREAM_BRANCH} into ${DOWNSTREAM_BRANCH}" \
+              -f body="Automated upstream sync triggered by workflow run [${GITHUB_RUN_ID}](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})." \
+              -f head="${owner}:${SYNC_BRANCH}" \
+              -f base="${DOWNSTREAM_BRANCH}" \
+              --jq '.number')
+            echo "Created pull request #${pr_number}."
           else
             echo "Pull request #${pr_number} already open for ${SYNC_BRANCH}; updated branch pushed."
           fi
@@ -99,7 +105,8 @@ jobs:
         run: |
           set -eo pipefail
           git fetch origin --prune
-          pr_number=$(gh pr list --head "${SYNC_BRANCH}" --json number --jq '.[0].number' || true)
+          owner="${GITHUB_REPOSITORY%%/*}"
+          pr_number=$(gh api "repos/${GITHUB_REPOSITORY}/pulls" -X GET -f state=open -f head="${owner}:${SYNC_BRANCH}" --jq '.[0].number' || true)
           if [ -z "${pr_number}" ]; then
             if git show-ref --verify --quiet "refs/remotes/origin/${SYNC_BRANCH}"; then
               git push origin ":${SYNC_BRANCH}"
