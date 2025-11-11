@@ -1,40 +1,91 @@
 name: Sync Upstream
 
-run-name: Sync the main branch with upstream llamastack/llama-stack
-
 on:
   schedule:
-    - cron: "0 0 * * *"  # Runs nightly at midnight UTC
+    - cron: "0 2 * * *"
   workflow_dispatch:
 
-jobs:
-  sync-upstream:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
-        with:
-          persist-credentials: false
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
 
-      - name: Sync to temporary branch
-        uses: repo-sync/github-sync@7c8493e95237362ad417495e8512c37e78d25f19
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      UPSTREAM_REPO: llamastack/llama-stack
+      UPSTREAM_BRANCH: main
+      DOWNSTREAM_BRANCH: sync-upstream-temp
+      SYNC_BRANCH: automation/sync-upstream
+    steps:
+      - name: Check out downstream repository
+        uses: actions/checkout@v4
         with:
-          source_repo: llamastack/llama-stack
-          source_branch: main
-          destination_branch: sync-upstream-temp
+          fetch-depth: 0
+          ref: ${{ env.DOWNSTREAM_BRANCH }}
+
+      - name: Sync branch with upstream
+        uses: repo-sync/github-sync@v2
+        with:
+          source_repo: ${{ env.UPSTREAM_REPO }}
+          source_branch: ${{ env.UPSTREAM_BRANCH }}
+          destination_repo: "VaishnaviHire/llama-stack"
+          destination_branch: ${{ env.SYNC_BRANCH }}
           sync_tags: "true"
           github_token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Create Pull Request
-        uses: peter-evans/create-pull-request@271a8d0340265f705b14b6d32b9829c1cb33d45e
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          branch: sync-upstream-temp
-          base: main
-          title: "Sync with upstream llamastack/llama-stack"
-          body: |
-            This PR syncs the main branch with upstream llamastack/llama-stack.
+      - name: Check for differences
+        id: diff
+        run: |
+          set -eo pipefail
+          git fetch origin "${SYNC_BRANCH}" --prune
+          git fetch origin "${DOWNSTREAM_BRANCH}" --prune
+          if git show-ref --verify --quiet "refs/remotes/origin/${SYNC_BRANCH}"; then
+            ahead=$(git rev-list --count "origin/${DOWNSTREAM_BRANCH}..origin/${SYNC_BRANCH}")
+          else
+            ahead=0
+          fi
+          if [ "${ahead}" -gt 0 ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
 
-            **Changes:**
-            - Syncs main branch from upstream
-            - Syncs all tags from upstream
-          delete-branch: true
+      - name: Create or update pull request
+        if: steps.diff.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eo pipefail
+          pr_number=$(gh pr list --head "${SYNC_BRANCH}" --state open --json number --jq '.[0].number' || true)
+          if [ -z "${pr_number}" ]; then
+            gh pr create \
+              --title "Sync upstream ${UPSTREAM_BRANCH} into ${DOWNSTREAM_BRANCH}" \
+              --body "Automated upstream sync triggered by workflow run [${GITHUB_RUN_ID}](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})." \
+              --head "${SYNC_BRANCH}" \
+              --base "${DOWNSTREAM_BRANCH}"
+          else
+            echo "Pull request #${pr_number} already open for ${SYNC_BRANCH}; updated branch pushed."
+          fi
+
+      - name: Cleanup sync branch when up to date
+        if: steps.diff.outputs.changed == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eo pipefail
+          git fetch origin --prune
+          if git show-ref --verify --quiet "refs/remotes/origin/${SYNC_BRANCH}"; then
+            pr_number=$(gh pr list --head "${SYNC_BRANCH}" --json number --jq '.[0].number' || true)
+            if [ -z "${pr_number}" ]; then
+              git push origin ":${SYNC_BRANCH}"
+              echo "Deleted remote branch ${SYNC_BRANCH}."
+            else
+              echo "Skipping deletion; pull request #${pr_number} still exists."
+            fi
+          else
+            echo "Sync branch ${SYNC_BRANCH} not found on origin."
+          fi
