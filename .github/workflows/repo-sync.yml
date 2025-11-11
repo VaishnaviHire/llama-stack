@@ -1,0 +1,4 @@
+name: Sync Upstream
+
+on:
+  workflow_dispatch:
