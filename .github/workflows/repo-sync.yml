@@ -15,6 +15,8 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+      issues: write
+      
     env:
       UPSTREAM_REPO: llamastack/llama-stack
       UPSTREAM_BRANCH: main
