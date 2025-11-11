@@ -92,10 +92,9 @@ jobs:
             echo "Pull request #${pr_number} already open for ${SYNC_BRANCH}; updated branch pushed."
           fi
 
-      - name: Sync tags from upstream
+      - name: Push tags to downstream
         run: |
           set -eo pipefail
-          git fetch upstream --tags --prune
           git push origin --tags
 
       - name: Cleanup sync branch when up to date
