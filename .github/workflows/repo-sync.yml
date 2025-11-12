@@ -20,7 +20,7 @@ jobs:
     env:
       UPSTREAM_REPO: llamastack/llama-stack
       UPSTREAM_BRANCH: main
-      DOWNSTREAM_BRANCH: sync-upstream-temp
+      DOWNSTREAM_BRANCH: main
       SYNC_BRANCH: automation/sync-upstream
     steps:
       - name: Check out downstream repository
