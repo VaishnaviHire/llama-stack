@@ -2,13 +2,16 @@
 requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
+[tool.uv]
+required-version = ">=0.7.0"
+
 [project]
 name = "llama_stack"
-version = "0.1.3"
+version = "0.4.0.dev0"
 authors = [{ name = "Meta Llama", email = "llama-oss@meta.com" }]
 description = "Llama Stack"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 license = { "text" = "MIT" }
 classifiers = [
     "License :: OSI Approved :: MIT License",
@@ -21,62 +24,172 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Information Analysis",
 ]
 dependencies = [
-    "blobfile",
-    "fire",
+    "PyYAML>=6.0",
+    "aiohttp",
+    "fastapi>=0.115.0,<1.0",                          # server
+    "fire",                                           # for MCP in LLS client
     "httpx",
-    "huggingface-hub",
+    "jinja2>=3.1.6",
     "jsonschema",
-    "llama-models>=0.1.3",
-    "llama-stack-client>=0.1.3",
+    "openai>=2.5.0",
     "prompt-toolkit",
     "python-dotenv",
-    "pydantic>=2",
-    "requests",
+    "pyjwt[crypto]>=2.10.0",                          # Pull crypto to support RS256 for jwt. Requires 2.10.0+ for ssl_context support.
+    "pydantic>=2.11.9",
     "rich",
-    "setuptools",
+    "starlette",
     "termcolor",
+    "tiktoken",
+    "pillow",
+    "h11>=0.16.0",
+    "python-multipart>=0.0.20",                       # For fastapi Form
+    "uvicorn>=0.34.0",                                # server
+    "opentelemetry-sdk>=1.30.0",                      # server
+    "opentelemetry-exporter-otlp-proto-http>=1.30.0", # server
+    "aiosqlite>=0.21.0",                              # server - for metadata store
+    "asyncpg",                                        # for metadata store
+    "sqlalchemy[asyncio]>=2.0.41",                    # server - for conversations
 ]
 
 [project.optional-dependencies]
+client = [
+    "llama-stack-client>=0.3.0",  # Optional for library-only usage
+]
+
+[dependency-groups]
 dev = [
-    "pytest",
-    "pytest-asyncio",
-    "nbval",            # For notebook testing
+    "pytest>=8.4",
+    "pytest-timeout",
+    "pytest-asyncio>=1.0",
+    "pytest-cov",
+    "pytest-html",
+    "pytest-json-report",
+    "pytest-socket", # For blocking network access in unit tests
+    "nbval", # For notebook testing
     "black",
     "ruff",
+    "mypy",
+    "pre-commit",
+    "ruamel.yaml", # needed for openapi generator
+]
+# Type checking dependencies - includes type stubs and optional runtime dependencies
+# needed for complete mypy coverage across all optional features
+type_checking = [
     "types-requests",
     "types-setuptools",
-    "pre-commit",
-    "uvicorn",
-    "fastapi",
+    "types-jsonschema",
+    "pandas-stubs",
+    "types-psutil",
+    "types-tqdm",
+    "boto3-stubs[s3]",
+    "streamlit",
+    "streamlit-option-menu",
+    "pandas",
+    "anthropic",
+    "databricks-sdk",
+    "fairscale",
+    "torchtune",
+    "trl",
+    "peft",
+    "datasets",
+    "together",
+    "nest-asyncio",
+    "pymongo",
+    "torchvision",
+    "sqlite-vec",
+    "faiss-cpu",
+    "lm-format-enforcer",
+    "mcp",
+    "ollama",
+    "llama-stack-client>=0.3.0",
+]
+# These are the dependencies required for running unit tests.
+unit = [
+    "anthropic",
+    "databricks-sdk",
+    "sqlite-vec",
+    "ollama",
+    "aiosqlite",
+    "aiohttp",
+    "psycopg2-binary>=2.9.0",
+    "pypdf>=6.1.3",
+    "mcp",
+    "chardet",
+    "sqlalchemy",
+    "sqlalchemy[asyncio]>=2.0.41",
+    "blobfile",
+    "faiss-cpu",
+    "litellm",
+    "together",
+    "coverage",
+    "moto[s3]>=5.1.10",
+]
+# These are the core dependencies required for running integration tests. They are shared across all
+# providers. If a provider requires additional dependencies, please add them to your environment
+# separately. If you are using "uv" to execute your tests, you can use the "--group" flag to specify extra
+# dependencies.
+test = [
+    "aiosqlite",
+    "aiohttp",
+    "torch>=2.6.0",
+    "torchvision>=0.21.0",
+    "chardet",
+    "psycopg2-binary>=2.9.0",
+    "pypdf>=6.1.3",
+    "mcp",
+    "datasets>=4.0.0",
+    "autoevals",
+    "transformers",
+    "sqlalchemy",
+    "sqlalchemy[asyncio]>=2.0.41",
+    "requests",
+    "chromadb>=1.0.15",
+    "qdrant-client",
+    "pymilvus>=2.6.1",
+    "milvus-lite>=2.5.0",
+    "weaviate-client>=4.16.4",
 ]
 docs = [
+    "setuptools",
     "sphinx-autobuild",
     "myst-parser",
+    "sphinx",
     "sphinx-rtd-theme",
+    "sphinx_rtd_dark_mode",
     "sphinx-copybutton",
     "sphinx-tabs",
     "sphinx-design",
     "sphinxcontrib.redoc",
     "sphinxcontrib.video",
     "sphinxcontrib.mermaid",
+    "sphinx-reredirects",
+    "tomli",
+    "linkify",
+    "sphinxcontrib.openapi",
+    "requests",
 ]
+codegen = ["rich", "pydantic>=2.11.9", "jinja2>=3.1.6"]
+benchmark = ["locust>=2.39.1"]
 
 [project.urls]
-Homepage = "https://github.com/meta-llama/llama-stack"
+Homepage = "https://github.com/llamastack/llama-stack"
 
 [project.scripts]
 llama = "llama_stack.cli.llama:main"
 install-wheel-from-presigned = "llama_stack.cli.scripts.run:install_wheel_from_presigned"
 
-[tool.setuptools]
-packages = { find = {} }
-license-files = []
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["llama_stack", "llama_stack.*"]
 
 [[tool.uv.index]]
 name = "pytorch-cpu"
 url = "https://download.pytorch.org/whl/cpu"
 explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu" }]
+torchvision = [{ index = "pytorch-cpu" }]
 
 [tool.ruff]
 line-length = 120
@@ -84,59 +197,175 @@ exclude = [
     "./.git",
     "./docs/*",
     "./build",
-    "./scripts",
     "./venv",
     "*.pyi",
     ".pre-commit-config.yaml",
     "*.md",
     ".flake8",
+    "benchmarking/k8s-benchmark/results",
 ]
 
 [tool.ruff.lint]
 select = [
-    "B",  # flake8-bugbear
-    "B9", # flake8-bugbear subset
-    "C",  # comprehensions
-    "E",  # pycodestyle
-    "F",  # Pyflakes
-    "N",  # Naming
-    "W",  # Warnings
-    "I",  # isort
+    "UP",      # pyupgrade
+    "B",       # flake8-bugbear
+    "B9",      # flake8-bugbear subset
+    "C",       # comprehensions
+    "E",       # pycodestyle
+    "F",       # Pyflakes
+    "N",       # Naming
+    "W",       # Warnings
+    "DTZ",     # datetime rules
+    "I",       # isort (imports order)
+    "RUF001",  # Checks for ambiguous Unicode characters in strings
+    "RUF002",  # Checks for ambiguous Unicode characters in docstrings
+    "RUF003",  # Checks for ambiguous Unicode characters in comments
+    "PLC2401", # Checks for the use of non-ASCII characters in variable names
+    "PLC2403", # Checks for the use of non-ASCII characters in import statements
+    "PLE2510", # Checks for strings that contain the control character BS.
+    "PLE2512", # Checks for strings that contain the raw control character SUB.
+    "PLE2513", # Checks for strings that contain the raw control character ESC.
+    "PLE2514", # Checks for strings that contain the raw control character NUL (0 byte).
+    "PLE2515", # Checks for strings that contain the zero width space character.
 ]
 ignore = [
-    "E203",
-    "E305",
-    "E402",
-    "E501", # line too long
-    "E721",
-    "E741",
-    "F405",
-    "F821",
-    "F841",
-    "C408", # ignored because we like the dict keyword argument syntax
-    "E302",
-    "W291",
-    "E303",
-    "N812", # ignored because import torch.nn.functional as F is PyTorch convention
-    "N817", # ignored because importing using acronyms is convention (DistributedDataParallel as DDP)
-    "E731", # allow usage of assigning lambda expressions
+    # The following ignores are desired by the project maintainers.
+    "E402", # Module level import not at top of file
+    "E501", # Line too long
+    "F405", # Maybe undefined or defined from star import
+    "C408", # Ignored because we like the dict keyword argument syntax
+    "N812", # Ignored because import torch.nn.functional as F is PyTorch convention
+
     # These are the additional ones we started ignoring after moving to ruff. We should look into each one of them later.
-    "C901",
-    "C405",
-    "C414",
-    "N803",
-    "N999",
-    "C403",
-    "C416",
-    "B028",
-    "C419",
-    "C401",
-    "B023",
-    # shebang has extra meaning in fbcode lints, so I think it's not worth trying
-    # to line this up with executable bit
-    "EXE001",
-    "N802",   # random naming hints don't need
-    # these ignores are from flake8-bugbear; please fix!
-    "B007",
-    "B008",
+    "C901", # Complexity of the function is too high
 ]
+unfixable = [
+    "PLE2515",
+] # Do not fix this automatically since ruff will replace the zero-width space with \u200b - let's do it manually
+
+# Ignore the following errors for the following files
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["DTZ"] # Ignore datetime rules for tests
+"src/llama_stack/providers/inline/scoring/basic/utils/ifeval_utils.py" = ["RUF001"]
+"src/llama_stack/providers/inline/scoring/basic/scoring_fn/fn_defs/regex_parser_multiple_choice_answer.py" = [
+    "RUF001",
+    "PLE2515",
+]
+"src/llama_stack/apis/**/__init__.py" = [
+    "F403",
+] # Using import * is acceptable (or at least tolerated) in an __init__.py of a package API
+
+[tool.mypy]
+mypy_path = ["src"]
+packages = ["llama_stack"]
+plugins = ['pydantic.mypy']
+disable_error_code = []
+warn_return_any = true
+# # honor excludes by not following there through imports
+follow_imports = "silent"
+# Note: some entries are directories, not files. This is because mypy doesn't
+# respect __init__.py excludes, so the only way to suppress these right now is
+# to exclude the entire directory.
+exclude = [
+    # As we fix more and more of these, we should remove them from the list
+    "^src/llama_stack/core/build\\.py$",
+    "^src/llama_stack/core/client\\.py$",
+    "^src/llama_stack/core/request_headers\\.py$",
+    "^src/llama_stack/core/routers/",
+    "^src/llama_stack/core/routing_tables/",
+    "^src/llama_stack/core/server/endpoints\\.py$",
+    "^src/llama_stack/core/server/server\\.py$",
+    "^src/llama_stack/core/stack\\.py$",
+    "^src/llama_stack/core/store/registry\\.py$",
+    "^src/llama_stack/core/utils/exec\\.py$",
+    "^src/llama_stack/core/utils/prompt_for_config\\.py$",
+    "^src/llama_stack/models/llama/llama3/interface\\.py$",
+    "^src/llama_stack/models/llama/llama3/tokenizer\\.py$",
+    "^src/llama_stack/models/llama/llama3/tool_utils\\.py$",
+    "^src/llama_stack/providers/inline/datasetio/localfs/",
+    "^src/llama_stack/providers/inline/eval/meta_reference/eval\\.py$",
+    "^src/llama_stack/providers/inline/inference/meta_reference/inference\\.py$",
+    "^src/llama_stack/models/llama/llama3/generation\\.py$",
+    "^src/llama_stack/models/llama/llama3/multimodal/model\\.py$",
+    "^src/llama_stack/models/llama/llama4/",
+    "^src/llama_stack/providers/inline/inference/sentence_transformers/sentence_transformers\\.py$",
+    "^src/llama_stack/providers/inline/post_training/common/validator\\.py$",
+    "^src/llama_stack/providers/inline/safety/code_scanner/",
+    "^src/llama_stack/providers/inline/safety/llama_guard/",
+    "^src/llama_stack/providers/inline/scoring/basic/",
+    "^src/llama_stack/providers/inline/scoring/braintrust/",
+    "^src/llama_stack/providers/inline/scoring/llm_as_judge/",
+    "^src/llama_stack/providers/remote/agents/sample/",
+    "^src/llama_stack/providers/remote/datasetio/huggingface/",
+    "^src/llama_stack/providers/remote/datasetio/nvidia/",
+    "^src/llama_stack/providers/remote/inference/oci/",
+    "^src/llama_stack/providers/remote/inference/bedrock/",
+    "^src/llama_stack/providers/remote/inference/nvidia/",
+    "^src/llama_stack/providers/remote/inference/passthrough/",
+    "^src/llama_stack/providers/remote/inference/runpod/",
+    "^src/llama_stack/providers/remote/inference/tgi/",
+    "^src/llama_stack/providers/remote/inference/watsonx/",
+    "^src/llama_stack/providers/remote/safety/bedrock/",
+    "^src/llama_stack/providers/remote/safety/nvidia/",
+    "^src/llama_stack/providers/remote/safety/sambanova/",
+    "^src/llama_stack/providers/remote/safety/sample/",
+    "^src/llama_stack/providers/remote/tool_runtime/bing_search/",
+    "^src/llama_stack/providers/remote/tool_runtime/brave_search/",
+    "^src/llama_stack/providers/remote/tool_runtime/model_context_protocol/",
+    "^src/llama_stack/providers/remote/tool_runtime/tavily_search/",
+    "^src/llama_stack/providers/remote/tool_runtime/wolfram_alpha/",
+    "^src/llama_stack/providers/remote/post_training/nvidia/",
+    "^src/llama_stack/providers/remote/vector_io/chroma/",
+    "^src/llama_stack/providers/remote/vector_io/milvus/",
+    "^src/llama_stack/providers/remote/vector_io/pgvector/",
+    "^src/llama_stack/providers/remote/vector_io/qdrant/",
+    "^src/llama_stack/providers/remote/vector_io/sample/",
+    "^src/llama_stack/providers/remote/vector_io/weaviate/",
+    "^src/llama_stack/providers/utils/bedrock/client\\.py$",
+    "^src/llama_stack/providers/utils/bedrock/refreshable_boto_session\\.py$",
+    "^src/llama_stack/providers/utils/inference/embedding_mixin\\.py$",
+    "^src/llama_stack/providers/utils/inference/litellm_openai_mixin\\.py$",
+    "^src/llama_stack/providers/utils/inference/model_registry\\.py$",
+    "^src/llama_stack/providers/utils/inference/openai_compat\\.py$",
+    "^src/llama_stack/providers/utils/inference/prompt_adapter\\.py$",
+    "^src/llama_stack/providers/utils/kvstore/kvstore\\.py$",
+    "^src/llama_stack/providers/utils/kvstore/postgres/postgres\\.py$",
+    "^src/llama_stack/providers/utils/kvstore/redis/redis\\.py$",
+    "^src/llama_stack/providers/utils/memory/vector_store\\.py$",
+    "^src/llama_stack/providers/utils/scoring/aggregation_utils\\.py$",
+    "^src/llama_stack/providers/utils/scoring/base_scoring_fn\\.py$",
+    "^src/llama_stack/providers/utils/telemetry/dataset_mixin\\.py$",
+    "^src/llama_stack/providers/utils/telemetry/trace_protocol\\.py$",
+    "^src/llama_stack/providers/utils/telemetry/tracing\\.py$",
+    "^src/llama_stack/strong_typing/auxiliary\\.py$",
+    "^src/llama_stack/distributions/template\\.py$",
+]
+
+[[tool.mypy.overrides]]
+# packages that lack typing annotations, do not have stubs, or are unavailable.
+module = [
+    "yaml",
+    "fire",
+    "torchtune.*",
+    "fairscale.*",
+    "torchvision.*",
+    "datasets",
+    "nest_asyncio",
+    "streamlit_option_menu",
+    "lmformatenforcer.*",
+]
+ignore_missing_imports = true
+
+[tool.pydantic-mypy]
+init_forbid_extra = true
+init_typed = true
+warn_required_dynamic_aliases = true
+
+[tool.ruff.lint.pep8-naming]
+classmethod-decorators = ["classmethod", "pydantic.field_validator"]
+
+[tool.pytest.ini_options]
+addopts = ["--durations=10"]
+asyncio_mode = "auto"
+markers = ["allow_network: Allow network access for specific unit tests"]
+filterwarnings = "ignore::DeprecationWarning"
