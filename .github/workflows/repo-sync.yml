@@ -93,6 +93,7 @@ jobs:
           fi
 
       - name: Push tags to downstream
+        if: steps.merge_upstream.outputs.changed == 'true'
         run: |
           set -eo pipefail
           git push origin --tags
