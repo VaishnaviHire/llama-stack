@@ -93,10 +93,17 @@ jobs:
           fi
 
       - name: Push tags to downstream
-        if: steps.merge_upstream.outputs.changed == 'true'
+        continue-on-error: true
         run: |
           set -eo pipefail
-          git push origin --tags
+          # Push tags fetched from upstream
+          # actions/checkout already configures authentication, contents: write permission is sufficient
+          # Some tags may fail if they reference commits with workflow files (GitHub restriction)
+          git push origin --tags || {
+            echo "⚠️ Some tags could not be pushed (likely due to workflow permission restrictions)"
+            echo "Note: Tags will be available in the repository after the PR is merged"
+            exit 0
+          }
 
       - name: Cleanup sync branch when up to date
         if: steps.merge_upstream.outputs.changed == 'false'
