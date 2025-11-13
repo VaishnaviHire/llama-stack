@@ -56,37 +56,39 @@ jobs:
           git reset --hard "origin/${DOWNSTREAM_BRANCH}"
           git checkout -B "${SYNC_BRANCH}" "origin/${DOWNSTREAM_BRANCH}"
 
-      - name: Rebase upstream changes
-        id: rebase_upstream
+      - name: Merge upstream changes
+        id: merge_upstream
         shell: bash
         run: |
-          # Rebase downstream changes on top of upstream/main
-          if git rebase "upstream/${UPSTREAM_BRANCH}"; then
-            # Rebase successful - check if there are changes
+          # Merge upstream/main into sync branch
+          if git merge --no-edit "upstream/${UPSTREAM_BRANCH}"; then
+            # Merge successful - check if there are changes
             ahead=$(git rev-list --count "origin/${DOWNSTREAM_BRANCH}..HEAD")
             if [ "${ahead}" -gt 0 ]; then
               echo "changed=true" >> "$GITHUB_OUTPUT"
             else
               echo "changed=false" >> "$GITHUB_OUTPUT"
             fi
+            echo "conflicts=false" >> "$GITHUB_OUTPUT"
           else
-            # Rebase conflicts detected - abort and create branch from upstream for manual resolution
-            echo "⚠️ Rebase conflicts detected"
-            git rebase --abort || true
-            # Create branch from upstream/main - conflicts will be visible in PR
+            # Merge conflicts detected - abort and create branch from upstream
+            echo " Merge conflicts detected"
+            git merge --abort || true
+            
+            # Create branch from upstream/main - conflicts will be visible when merging this PR
             git checkout -B "${SYNC_BRANCH}" "upstream/${UPSTREAM_BRANCH}"
             echo "changed=true" >> "$GITHUB_OUTPUT"
             echo "conflicts=true" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Push sync branch
-        if: steps.rebase_upstream.outputs.changed == 'true'
+        if: steps.merge_upstream.outputs.changed == 'true'
         shell: bash
         run: |
           git push --force --set-upstream origin "${SYNC_BRANCH}"
 
       - name: Create or update pull request
-        if: steps.rebase_upstream.outputs.changed == 'true'
+        if: steps.merge_upstream.outputs.changed == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
@@ -95,28 +97,38 @@ jobs:
           pr_number=$(gh api "repos/${GITHUB_REPOSITORY}/pulls" -X GET -f state=open -f head="${owner}:${SYNC_BRANCH}" --jq '.[0].number' || true)
 
           # Build PR body
-          pr_body="Automated upstream sync triggered by workflow run [${GITHUB_RUN_ID}](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}).
+          pr_body="Automated upstream sync triggered by workflow run [${GITHUB_RUN_ID}](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})."
 
-          if [ "${steps.rebase_upstream.outputs.conflicts}" == "true" ]; then
-            pr_body="${pr_body}
+          # Make conflicts message prominent - check first
+          if [ "${steps.merge_upstream.outputs.conflicts}" == "true" ]; then
+            pr_body=" **MERGE CONFLICTS DETECTED** "$'\n\n'"${pr_body}"
+          fi
 
-            ⚠️ **Rebase conflicts detected** - This PR contains upstream changes but conflicts need to be resolved manually."
+          # Set PR title - include conflict warning if applicable
+          if [ "${steps.merge_upstream.outputs.conflicts}" == "true" ]; then
+            pr_title=" [CONFLICTS] Sync upstream ${UPSTREAM_BRANCH} into ${DOWNSTREAM_BRANCH}"
+          else
+            pr_title="Sync upstream ${UPSTREAM_BRANCH} into ${DOWNSTREAM_BRANCH}"
           fi
 
           if [ -z "${pr_number}" ]; then
             pr_number=$(gh api "repos/${GITHUB_REPOSITORY}/pulls" -X POST \
-              -f title="Sync upstream ${UPSTREAM_BRANCH} into ${DOWNSTREAM_BRANCH}" \
+              -f title="${pr_title}" \
               -f body="${pr_body}" \
               -f head="${owner}:${SYNC_BRANCH}" \
               -f base="${DOWNSTREAM_BRANCH}" \
               --jq '.number')
             echo "Created pull request #${pr_number}."
           else
+            # Update existing PR title if conflicts are detected
+            if [ "${steps.merge_upstream.outputs.conflicts}" == "true" ]; then
+              gh pr edit "${pr_number}" --title "${pr_title}" || true
+            fi
             echo "Pull request #${pr_number} already open for ${SYNC_BRANCH}; updated branch pushed."
           fi
 
       - name: Cleanup sync branch when up to date
-        if: steps.rebase_upstream.outputs.changed == 'false'
+        if: steps.merge_upstream.outputs.changed == 'false'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
