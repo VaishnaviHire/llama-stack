@@ -1,5 +1,7 @@
 name: Sync Upstream
 
+run-name: Sync main with llamastack/llama-stack
+
 on:
   schedule:
     - cron: "0 2 * * *"
@@ -16,7 +18,7 @@ jobs:
       contents: write
       pull-requests: write
       issues: write
-      
+
     env:
       UPSTREAM_REPO: llamastack/llama-stack
       UPSTREAM_BRANCH: main
@@ -24,7 +26,7 @@ jobs:
       SYNC_BRANCH: automation/sync-upstream
     steps:
       - name: Check out downstream repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
         with:
           fetch-depth: 0
           ref: ${{ env.DOWNSTREAM_BRANCH }}
@@ -37,8 +39,8 @@ jobs:
       - name: Fetch upstream
         env:
           UPSTREAM_URL: https://github.com/${{ env.UPSTREAM_REPO }}.git
+        shell: bash
         run: |
-          set -eo pipefail
           if git remote get-url upstream >/dev/null 2>&1; then
             git remote set-url upstream "${UPSTREAM_URL}"
           else
@@ -49,41 +51,62 @@ jobs:
           git fetch upstream --tags --prune
 
       - name: Prepare sync branch
+        shell: bash
         run: |
-          set -eo pipefail
           git reset --hard "origin/${DOWNSTREAM_BRANCH}"
           git checkout -B "${SYNC_BRANCH}" "origin/${DOWNSTREAM_BRANCH}"
 
-      - name: Merge upstream changes
-        id: merge_upstream
+      - name: Rebase upstream changes
+        id: rebase_upstream
+        shell: bash
         run: |
-          set -eo pipefail
-          git merge --no-edit "upstream/${UPSTREAM_BRANCH}"
-          ahead=$(git rev-list --count "origin/${DOWNSTREAM_BRANCH}..HEAD")
-          if [ "${ahead}" -gt 0 ]; then
-            echo "changed=true" >> "$GITHUB_OUTPUT"
+          # Rebase downstream changes on top of upstream/main
+          if git rebase "upstream/${UPSTREAM_BRANCH}"; then
+            # Rebase successful - check if there are changes
+            ahead=$(git rev-list --count "origin/${DOWNSTREAM_BRANCH}..HEAD")
+            if [ "${ahead}" -gt 0 ]; then
+              echo "changed=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "changed=false" >> "$GITHUB_OUTPUT"
+            fi
           else
-            echo "changed=false" >> "$GITHUB_OUTPUT"
+            # Rebase conflicts detected - abort and create branch from upstream for manual resolution
+            echo "⚠️ Rebase conflicts detected"
+            git rebase --abort || true
+            # Create branch from upstream/main - conflicts will be visible in PR
+            git checkout -B "${SYNC_BRANCH}" "upstream/${UPSTREAM_BRANCH}"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "conflicts=true" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Push sync branch
-        if: steps.merge_upstream.outputs.changed == 'true'
+        if: steps.rebase_upstream.outputs.changed == 'true'
+        shell: bash
         run: |
-          set -eo pipefail
           git push --force --set-upstream origin "${SYNC_BRANCH}"
 
       - name: Create or update pull request
-        if: steps.merge_upstream.outputs.changed == 'true'
+        if: steps.rebase_upstream.outputs.changed == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
         run: |
-          set -eo pipefail
           owner="${GITHUB_REPOSITORY%%/*}"
           pr_number=$(gh api "repos/${GITHUB_REPOSITORY}/pulls" -X GET -f state=open -f head="${owner}:${SYNC_BRANCH}" --jq '.[0].number' || true)
+
+          # Build PR body
+          pr_body="Automated upstream sync triggered by workflow run [${GITHUB_RUN_ID}](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}).
+
+          if [ "${steps.rebase_upstream.outputs.conflicts}" == "true" ]; then
+            pr_body="${pr_body}
+
+            ⚠️ **Rebase conflicts detected** - This PR contains upstream changes but conflicts need to be resolved manually."
+          fi
+
           if [ -z "${pr_number}" ]; then
             pr_number=$(gh api "repos/${GITHUB_REPOSITORY}/pulls" -X POST \
               -f title="Sync upstream ${UPSTREAM_BRANCH} into ${DOWNSTREAM_BRANCH}" \
-              -f body="Automated upstream sync triggered by workflow run [${GITHUB_RUN_ID}](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})." \
+              -f body="${pr_body}" \
               -f head="${owner}:${SYNC_BRANCH}" \
               -f base="${DOWNSTREAM_BRANCH}" \
               --jq '.number')
@@ -92,25 +115,12 @@ jobs:
             echo "Pull request #${pr_number} already open for ${SYNC_BRANCH}; updated branch pushed."
           fi
 
-      - name: Push tags to downstream
-        continue-on-error: true
-        run: |
-          set -eo pipefail
-          # Push tags fetched from upstream
-          # actions/checkout already configures authentication, contents: write permission is sufficient
-          # Some tags may fail if they reference commits with workflow files (GitHub restriction)
-          git push origin --tags || {
-            echo "⚠️ Some tags could not be pushed (likely due to workflow permission restrictions)"
-            echo "Note: Tags will be available in the repository after the PR is merged"
-            exit 0
-          }
-
       - name: Cleanup sync branch when up to date
-        if: steps.merge_upstream.outputs.changed == 'false'
+        if: steps.rebase_upstream.outputs.changed == 'false'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
         run: |
-          set -eo pipefail
           git fetch origin --prune
           owner="${GITHUB_REPOSITORY%%/*}"
           pr_number=$(gh api "repos/${GITHUB_REPOSITORY}/pulls" -X GET -f state=open -f head="${owner}:${SYNC_BRANCH}" --jq '.[0].number' || true)
@@ -124,4 +134,3 @@ jobs:
           else
             echo "Skipping deletion; pull request #${pr_number} still exists."
           fi
-
