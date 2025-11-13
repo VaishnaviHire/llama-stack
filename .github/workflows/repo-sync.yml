@@ -94,11 +94,6 @@ jobs:
             echo "Pull request #${pr_number} already open for ${SYNC_BRANCH}; updated branch pushed."
           fi
 
-      - name: Push tags to downstream
-        run: |
-          set -eo pipefail
-          git push origin --tags
-
       - name: Cleanup sync branch when up to date
         if: steps.merge_upstream.outputs.changed == 'false'
         env:
