@@ -39,8 +39,8 @@ jobs:
       - name: Fetch upstream
         env:
           UPSTREAM_URL: https://github.com/${{ env.UPSTREAM_REPO }}.git
-        shell: bash
         run: |
+          set -eo pipefail
           if git remote get-url upstream >/dev/null 2>&1; then
             git remote set-url upstream "${UPSTREAM_URL}"
           else
@@ -51,88 +51,60 @@ jobs:
           git fetch upstream --tags --prune
 
       - name: Prepare sync branch
-        shell: bash
         run: |
+          set -eo pipefail
           git reset --hard "origin/${DOWNSTREAM_BRANCH}"
           git checkout -B "${SYNC_BRANCH}" "origin/${DOWNSTREAM_BRANCH}"
 
       - name: Merge upstream changes
         id: merge_upstream
-        shell: bash
         run: |
-          # Merge upstream/main into sync branch
-          if git merge --no-edit "upstream/${UPSTREAM_BRANCH}"; then
-            # Merge successful - check if there are changes
-            ahead=$(git rev-list --count "origin/${DOWNSTREAM_BRANCH}..HEAD")
-            if [ "${ahead}" -gt 0 ]; then
-              echo "changed=true" >> "$GITHUB_OUTPUT"
-            else
-              echo "changed=false" >> "$GITHUB_OUTPUT"
-            fi
-            echo "conflicts=false" >> "$GITHUB_OUTPUT"
-          else
-            # Merge conflicts detected - abort and create branch from upstream
-            echo " Merge conflicts detected"
-            git merge --abort || true
-            
-            # Create branch from upstream/main - conflicts will be visible when merging this PR
-            git checkout -B "${SYNC_BRANCH}" "upstream/${UPSTREAM_BRANCH}"
+          set -eo pipefail
+          git merge --no-edit "upstream/${UPSTREAM_BRANCH}"
+          ahead=$(git rev-list --count "origin/${DOWNSTREAM_BRANCH}..HEAD")
+          if [ "${ahead}" -gt 0 ]; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
-            echo "conflicts=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Push sync branch
         if: steps.merge_upstream.outputs.changed == 'true'
-        shell: bash
         run: |
+          set -eo pipefail
           git push --force --set-upstream origin "${SYNC_BRANCH}"
 
       - name: Create or update pull request
         if: steps.merge_upstream.outputs.changed == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: bash
         run: |
+          set -eo pipefail
           owner="${GITHUB_REPOSITORY%%/*}"
           pr_number=$(gh api "repos/${GITHUB_REPOSITORY}/pulls" -X GET -f state=open -f head="${owner}:${SYNC_BRANCH}" --jq '.[0].number' || true)
-
-          # Build PR body
-          pr_body="Automated upstream sync triggered by workflow run [${GITHUB_RUN_ID}](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})."
-
-          # Make conflicts message prominent - check first
-          if [ "${steps.merge_upstream.outputs.conflicts}" == "true" ]; then
-            pr_body=" **MERGE CONFLICTS DETECTED** "$'\n\n'"${pr_body}"
-          fi
-
-          # Set PR title - include conflict warning if applicable
-          if [ "${steps.merge_upstream.outputs.conflicts}" == "true" ]; then
-            pr_title=" [CONFLICTS] Sync upstream ${UPSTREAM_BRANCH} into ${DOWNSTREAM_BRANCH}"
-          else
-            pr_title="Sync upstream ${UPSTREAM_BRANCH} into ${DOWNSTREAM_BRANCH}"
-          fi
-
           if [ -z "${pr_number}" ]; then
             pr_number=$(gh api "repos/${GITHUB_REPOSITORY}/pulls" -X POST \
-              -f title="${pr_title}" \
-              -f body="${pr_body}" \
+              -f title="Sync upstream ${UPSTREAM_BRANCH} into ${DOWNSTREAM_BRANCH}" \
+              -f body="Automated upstream sync triggered by workflow run [${GITHUB_RUN_ID}](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})." \
               -f head="${owner}:${SYNC_BRANCH}" \
               -f base="${DOWNSTREAM_BRANCH}" \
               --jq '.number')
             echo "Created pull request #${pr_number}."
           else
-            # Update existing PR title if conflicts are detected
-            if [ "${steps.merge_upstream.outputs.conflicts}" == "true" ]; then
-              gh pr edit "${pr_number}" --title "${pr_title}" || true
-            fi
             echo "Pull request #${pr_number} already open for ${SYNC_BRANCH}; updated branch pushed."
           fi
+
+      - name: Push tags to downstream
+        run: |
+          set -eo pipefail
+          git push origin --tags
 
       - name: Cleanup sync branch when up to date
         if: steps.merge_upstream.outputs.changed == 'false'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: bash
         run: |
+          set -eo pipefail
           git fetch origin --prune
           owner="${GITHUB_REPOSITORY%%/*}"
           pr_number=$(gh api "repos/${GITHUB_REPOSITORY}/pulls" -X GET -f state=open -f head="${owner}:${SYNC_BRANCH}" --jq '.[0].number' || true)
